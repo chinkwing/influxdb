@@ -43,12 +43,10 @@ func (e *Engine) measurementNamesNoPredicate(ctx context.Context, orgID, bucketI
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
 		// Check the context before accessing each tsm file
-		select {
-		case <-ctx.Done():
-			canceled = true
+		if ctx.Err() != nil {
 			return false
-		default:
 		}
+
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(prefix, prefix) {
 			iter := f.TimeRangeIterator(prefix, start, end)
 			for i := 0; iter.Next(); i++ {
@@ -161,11 +159,9 @@ func (e *Engine) measurementNamesPredicate(ctx context.Context, orgID, bucketID 
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
 		// Check the context before accessing each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(tsmKeyPrefix, tsmKeyPrefix) {
 			f.Ref()
@@ -193,14 +189,9 @@ func (e *Engine) measurementNamesPredicate(ctx context.Context, orgID, bucketID 
 	)
 
 	for i := range keys {
-		// to keep cache scans fast, check context every 'cancelCheckInterval' iteratons
-		if i%cancelCheckInterval == 0 {
-			select {
-			case <-ctx.Done():
-				stats = statsFromIters(stats, iters)
-				return cursors.NewStringSliceIteratorWithStats(nil, stats), ctx.Err()
-			default:
-			}
+		if ctx.Err() != nil {
+			stats = statsFromIters(stats, iters)
+			return cursors.NewStringSliceIteratorWithStats(nil, stats), ctx.Err()
 		}
 
 		_, tags = seriesfile.ParseSeriesKeyInto(keys[i], tags[:0])
@@ -353,13 +344,11 @@ func (e *Engine) fieldsPredicate(ctx context.Context, orgID influxdb.ID, bucketI
 	var canceled bool
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
-		// Check the context before accessing each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
+
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(tsmKeyPrefix, tsmKeyPrefix) {
 			f.Ref()
 			files = append(files, f)
@@ -386,14 +375,9 @@ func (e *Engine) fieldsPredicate(ctx context.Context, orgID influxdb.ID, bucketI
 	)
 
 	for i := range keys {
-		// to keep cache scans fast, check context every 'cancelCheckInterval' iteratons
-		if i%cancelCheckInterval == 0 {
-			select {
-			case <-ctx.Done():
-				stats = statsFromTimeRangeMaxTimeIters(stats, iters)
-				return cursors.NewMeasurementFieldsSliceIteratorWithStats(nil, stats), ctx.Err()
-			default:
-			}
+		if ctx.Err() != nil {
+			stats = statsFromTimeRangeMaxTimeIters(stats, iters)
+			return cursors.NewMeasurementFieldsSliceIteratorWithStats(nil, stats), ctx.Err()
 		}
 
 		_, tags = seriesfile.ParseSeriesKeyInto(keys[i], tags[:0])
@@ -460,13 +444,11 @@ func (e *Engine) fieldsNoPredicate(ctx context.Context, orgID influxdb.ID, bucke
 	var canceled bool
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
-		// Check the context before touching each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
+
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(tsmKeyPrefix, tsmKeyPrefix) {
 			// TODO(sgc): create f.TimeRangeIterator(minKey, maxKey, start, end)
 			iter := f.TimeRangeMaxTimeIterator(tsmKeyPrefix, start, end)

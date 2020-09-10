@@ -16,12 +16,6 @@ import (
 	"github.com/influxdata/influxql"
 )
 
-// cancelCheckInterval represents the period at which TagKeys and TagValues
-// will check for a canceled context. Specifically after every 64 series
-// scanned, the query context will be checked for cancellation, and if canceled,
-// the calls will immediately return.
-const cancelCheckInterval = 64
-
 // TagValues returns an iterator which enumerates the values for the specific
 // tagKey in the given bucket matching the predicate within the
 // time range [start, end].
@@ -63,12 +57,11 @@ func (e *Engine) tagValuesNoPredicate(ctx context.Context, orgID, bucketID influ
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
 		// Check the context before accessing each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
+
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(tsmKeyPrefix, tsmKeyPrefix) {
 			// TODO(sgc): create f.TimeRangeIterator(minKey, maxKey, start, end)
 			iter := f.TimeRangeIterator(tsmKeyPrefix, start, end)
@@ -189,12 +182,11 @@ func (e *Engine) tagValuesPredicate(ctx context.Context, orgID, bucketID influxd
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
 		// Check the context before accessing each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
+
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(tsmKeyPrefix, tsmKeyPrefix) {
 			f.Ref()
 			files = append(files, f)
@@ -221,14 +213,9 @@ func (e *Engine) tagValuesPredicate(ctx context.Context, orgID, bucketID influxd
 	)
 
 	for i := range keys {
-		// to keep cache scans fast, check context every 'cancelCheckInterval' iteratons
-		if i%cancelCheckInterval == 0 {
-			select {
-			case <-ctx.Done():
-				stats = statsFromIters(stats, iters)
-				return cursors.NewStringSliceIteratorWithStats(nil, stats), ctx.Err()
-			default:
-			}
+		if err := ctx.Err(); err != nil {
+			stats = statsFromIters(stats, iters)
+			return cursors.NewStringSliceIteratorWithStats(nil, stats), err
 		}
 
 		_, tags = seriesfile.ParseSeriesKeyInto(keys[i], tags[:0])
@@ -295,14 +282,8 @@ func (e *Engine) findCandidateKeys(ctx context.Context, orgBucket []byte, predic
 
 	var keys [][]byte
 	for i := 0; ; i++ {
-		// to keep series file index scans fast,
-		// check context every 'cancelCheckInterval' iteratons
-		if i%cancelCheckInterval == 0 {
-			select {
-			case <-ctx.Done():
-				return keys, ctx.Err()
-			default:
-			}
+		if ctx.Err() != nil {
+			return keys, ctx.Err()
 		}
 
 		elem, err := sitr.Next()
@@ -366,11 +347,9 @@ func (e *Engine) tagKeysNoPredicate(ctx context.Context, orgID, bucketID influxd
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
 		// Check the context before touching each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
 
 		var hasRef bool
@@ -484,12 +463,11 @@ func (e *Engine) tagKeysPredicate(ctx context.Context, orgID, bucketID influxdb.
 
 	e.FileStore.ForEachFile(func(f TSMFile) bool {
 		// Check the context before touching each tsm file
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			canceled = true
 			return false
-		default:
 		}
+
 		if f.OverlapsTimeRange(start, end) && f.OverlapsKeyPrefixRange(tsmKeyPrefix, tsmKeyPrefix) {
 			f.Ref()
 			files = append(files, f)
@@ -516,14 +494,9 @@ func (e *Engine) tagKeysPredicate(ctx context.Context, orgID, bucketID influxdb.
 	)
 
 	for i := range keys {
-		// to keep cache scans fast, check context every 'cancelCheckInterval' iteratons
-		if i%cancelCheckInterval == 0 {
-			select {
-			case <-ctx.Done():
-				stats = statsFromIters(stats, iters)
-				return cursors.NewStringSliceIteratorWithStats(nil, stats), ctx.Err()
-			default:
-			}
+		if ctx.Err() != nil {
+			stats = statsFromIters(stats, iters)
+			return cursors.NewStringSliceIteratorWithStats(nil, stats), ctx.Err()
 		}
 
 		_, tags = seriesfile.ParseSeriesKeyInto(keys[i], tags[:0])
